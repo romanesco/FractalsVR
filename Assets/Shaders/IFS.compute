@@ -1,0 +1,52 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+#include "HLSLSupport.cginc"
+#include "Packages/jp.keijiro.pcx/Runtime/Shaders/Common.cginc"
+
+StructuredBuffer<float4> SourceBuffer;
+RWStructuredBuffer<float4> OutputBuffer;
+
+CBUFFER_START(Params)
+    float4 centers[10];
+    float4x4 multipliers[10];
+    int length;
+    int numSymbols;
+    int bits;
+    int numSymbolsInFloat;
+CBUFFER_END
+
+[numthreads(128,1,1)]
+void CSMain (uint id : SV_DispatchThreadID)
+{
+    float4 pt = SourceBuffer[id];
+
+    // obtain symbol sequence
+    uint n[3];
+    n[0] = asuint(pt.x);
+    n[1] = asuint(pt.y);
+    n[2] = asuint(pt.z);
+
+    int seq[32*3];
+    int i = 0;
+    uint mask = (1 << bits) -1;
+    for (int j=0; j<3; j++) {
+        for (int k=numSymbolsInFloat-1; k>=0; k--) {
+            if (i < length) {
+                seq[i] = ( ( n[j] >> (bits*k) ) & mask );
+                i++;
+            } else break;
+        }
+    }
+
+    float4 x = centers[seq[length-1]];    
+
+    for (i=length-2; i>=0; i--) {
+        x = mul(multipliers[seq[i]],x-centers[seq[i]]) + centers[seq[i]];
+    }
+
+    // necessary ? 
+    half3 c = PcxDecodeColor(asuint(pt.w));
+    
+    OutputBuffer[id] = float4(x.xyz, asfloat(PcxEncodeColor(c)));
+}
